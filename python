@@ -1,0 +1,100 @@
+import network
+import time
+import urequests
+import ujson
+from machine import Pin
+import esp32
+import gc
+
+# --- WiFi Credentials ---
+SSID = 'smile'
+PASSWORD = '123456789'
+
+# --- Telegram Bot Credentials ---
+BOT_TOKEN = '7482937362:AAFtMrywNSUAr0Yp_OBB13nkB2k9pAwq4mM'
+CHAT_ID = '5067824021'
+
+# --- GPIO Pins ---
+PIR_PIN = 13
+RELAY_PIN = 14
+SMOKE_PIN = 15
+FLASH_PIN = 4
+
+motion_detected = False
+engine_on = False
+flash_on = False
+
+# --- Connect to Wi-Fi ---
+def connect_wifi():
+    wlan = network.WLAN(network.STA_IF)
+    wlan.active(True)
+    wlan.connect(SSID, PASSWORD)
+    print("Connecting to WiFi...", end="")
+    while not wlan.isconnected():
+        print(".", end="")
+        time.sleep(0.5)
+    print("\nConnected, IP:", wlan.ifconfig()[0])
+
+# --- Send message to Telegram ---
+def send_telegram_message(message):
+    url = f'https://api.telegram.org/bot{BOT_TOKEN}/sendMessage'
+    payload = {'chat_id': CHAT_ID, 'text': message}
+    try:
+        r = urequests.post(url, json=payload)
+        r.close()
+    except Exception as e:
+        print("Telegram error:", e)
+
+# --- Send Photo to Telegram ---
+def send_photo():
+    # Replace with actual camera capture logic (requires camera driver support)
+    send_telegram_message("Photo captured! (Camera support needed in MicroPython)")
+
+# --- Motion detection interrupt ---
+def motion_handler(pin):
+    global motion_detected
+    motion_detected = True
+
+# --- Setup GPIO ---
+def setup_gpio():
+    global motion_detected
+    motion_pin = Pin(PIR_PIN, Pin.IN)
+    relay_pin = Pin(RELAY_PIN, Pin.OUT)
+    smoke_pin = Pin(SMOKE_PIN, Pin.IN)
+    flash = Pin(FLASH_PIN, Pin.OUT)
+
+    motion_pin.irq(trigger=Pin.IRQ_RISING, handler=motion_handler)
+    relay_pin.value(0)
+    flash.value(0)
+
+    return relay_pin, smoke_pin, flash
+
+# --- Main Loop ---
+def main():
+    global motion_detected, engine_on, flash_on
+
+    connect_wifi()
+    relay, smoke_sensor, flash = setup_gpio()
+
+    send_telegram_message("System initialized. Type /start to begin.")
+
+    while True:
+        try:
+            if motion_detected:
+                send_telegram_message("Motion detected!")
+                send_photo()
+                motion_detected = False
+
+            if engine_on:
+                relay.value(1)
+            else:
+                relay.value(0)
+
+            time.sleep(1)
+
+        except Exception as e:
+            print("Error in loop:", e)
+            time.sleep(2)
+        gc.collect()
+
+main()
